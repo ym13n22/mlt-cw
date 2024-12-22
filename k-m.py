@@ -16,6 +16,10 @@ from nltk import pos_tag
 
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
+nltk.download('punkt')
+nltk.download('punkt_tab') 
+nltk.download('stopwords')
+
 
 num_words = {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'million', 'billion'}
 
@@ -94,7 +98,7 @@ print("print(important_words[:10]) "+str(important_words[:10]))
 
 
 important_words_list = list(important_words)
-window_size = 10 #How many words in sequence to consider to be in the window
+window_size = 50 #How many words in sequence to consider to be in the window
 # Create a list of co-occurring word pairs
 co_occurrences = defaultdict(Counter)
 for i, word in enumerate(important_words):
@@ -130,10 +134,12 @@ print(f"Non-zero elements in the matrix: {non_zero_count}")
 mat = co_matrix_df
 mat_array = mat.values
 
-#nmf = NMF(n_components=300, init='random',max_iter=500, tol=1e-4, random_state=0)
-#nmf_result = nmf.fit_transform(mat_array)
+nmf = NMF(n_components=50, max_iter=200, random_state=42)
+nmf_result = nmf.fit_transform(mat_array)
+print("nmf_result.shape",str(nmf_result.shape))
 tsne = TSNE(n_components=2, random_state=42)
-mat_array_tsne = tsne.fit_transform(mat_array)
+mat_array_tsne = tsne.fit_transform(nmf_result)
+print("mat_array_tsne.shape",str(mat_array_tsne.shape))
 # Using sklearn
 #km = KMeans(n_clusters=5)
 #km.fit(mat)
@@ -167,7 +173,7 @@ plt.show()
 
 
 # Format results as a DataFrame
-k_values = range(2, 11)  # 从 2 到 10 尝试不同的簇数
+k_values = range(25, 30)  # 从 2 到 10 尝试不同的簇数
 #k_values = [ 50, 100, 200, 500]
 
 
@@ -201,7 +207,7 @@ silhouette_scores = []
 
 for k in k_values:
     km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array)  # 用 co-occurrence matrix 进行聚类
+    km.fit(mat_array_tsne)  # 用 co-occurrence matrix 进行聚类
     labels = km.labels_
 
     plt.figure(figsize=(8, 6))
@@ -212,8 +218,8 @@ for k in k_values:
 
     # 绘制簇的中心
     centers = km.cluster_centers_
-    centers_tsne = tsne.fit_transform(centers)
-    plt.scatter(centers_tsne[:, 0], centers_tsne[:, 1], c='black', s=200, marker='*', label='Centroids')
+    print("print(centers.shape)"+str(centers.shape))
+    plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='*', label='Centroids')
 
     # 添加标题和标签
     plt.title(f'K-means Clustering (k={k})', fontsize=14)
