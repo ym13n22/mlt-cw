@@ -10,8 +10,14 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from nltk.stem import PorterStemmer
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
+
+num_words = {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'million', 'billion'}
+
+# 常见单位
+units = {'million', 'billion', 'kg', 'g', 'lb', 'm', 'cm', 'km', 'hour', 'minute', 'second', 'percent'}
 
 with open("text8/text8","r")as f:
     data =f.readline()
@@ -46,10 +52,34 @@ filtered_words = [w for w in cleaned_words1 if w not in stop_words]
 
 print("filtered word "+str(len(filtered_words)))
 
-word_freq = Counter(filtered_words)
-threshold = 5  # 高频词阈值
+stemmer = PorterStemmer()
+stems = [stemmer.stem(word) for word in filtered_words]
+
+print("stems "+str(len(stems)))
+
+cleaned_tokens = []
+
+for token in stems:
+    # 去掉纯数字
+    if token.isdigit():
+        continue
+    # 去掉数字文字形式（如one, two, three等）
+    elif token.lower() in num_words:
+        continue
+    # 去掉单位
+    elif token.lower() in units:
+        continue
+    # 其他有效词保留
+    else:
+        cleaned_tokens.append(token)
+
+
+print("cleaned_tokens "+str(len(cleaned_tokens)))
+word_freq = Counter(cleaned_tokens)
+min_freq = 50  # 最小词频
+max_freq = 50000  # 最大词频
 #important_words = {word for word, freq in word_freq.items() if freq > threshold}
-important_words = [word for word in filtered_words if word_freq[word] > 25]
+important_words = [word for word in cleaned_tokens if min_freq < word_freq[word] <max_freq]
 print("important word "+str(len(important_words)))
 print("print(important_words[:10]) "+str(important_words[:10]))
 
@@ -58,7 +88,7 @@ print("print(important_words[:10]) "+str(important_words[:10]))
 
 
 important_words_list = list(important_words)
-window_size = 5 #How many words in sequence to consider to be in the window
+window_size = 10 #How many words in sequence to consider to be in the window
 # Create a list of co-occurring word pairs
 co_occurrences = defaultdict(Counter)
 for i, word in enumerate(important_words):
@@ -129,7 +159,8 @@ plt.show()
 
 
 # Format results as a DataFrame
-k_values = range(2, 10)  # 从 2 到 10 尝试不同的簇数
+k_values = range(2, 11)  # 从 2 到 10 尝试不同的簇数
+#k_values = [ 50, 100, 200, 500]
 
 
 inertias = []
@@ -169,7 +200,7 @@ for k in k_values:
 
     # 为每个簇绘制不同颜色的点
     for i in range(k):
-        plt.scatter(mat_array[labels == i, 0], mat_array[labels == i, 1], label=f'Cluster {i + 1}', s=50)
+        plt.scatter(mat_array_tsne[labels == i, 0], mat_array_tsne[labels == i, 1], label=f'Cluster {i + 1}', s=50)
 
     # 绘制簇的中心
     centers = km.cluster_centers_
@@ -187,7 +218,7 @@ for k in k_values:
     plt.show()
     plt.close()  # 关闭当前图形，避免显示多张图
 
-    silhouette_avg = silhouette_score(mat_array, labels)
+    silhouette_avg = silhouette_score(mat_array_tsne, labels)
     silhouette_scores.append(silhouette_avg)
     print(f"For k={k}, silhouette score: {silhouette_avg}")
 
