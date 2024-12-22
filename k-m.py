@@ -11,6 +11,9 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from nltk.stem import PorterStemmer
+from sklearn.decomposition import NMF
+from nltk import pos_tag
+
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
 
@@ -41,7 +44,7 @@ words=[w.lower() for w in tokens]
 vocab=set(set(words))
 print("vocab "+str(len(vocab)))
 
-cleaned_words=[w for w in words if len(w)>=3]
+cleaned_words=[w for w in words if 20>len(w)>=3]
 print("cleaned words "+str(len(cleaned_words)))
 cleaned_words1 = [w for w in cleaned_words if not re.search(r'[aeiou]{3,}', w)]
 print("cleaned words1 "+str(len(cleaned_words1)))
@@ -53,7 +56,10 @@ filtered_words = [w for w in cleaned_words1 if w not in stop_words]
 print("filtered word "+str(len(filtered_words)))
 
 stemmer = PorterStemmer()
-stems = [stemmer.stem(word) for word in filtered_words]
+#tagged_words = pos_tag(filtered_words)
+#nouns = [word for word, tag in tagged_words if tag.startswith('NN')]
+#print("nouns "+str(len(nouns)))
+stems = [stemmer.stem(noun) for noun in filtered_words]
 
 print("stems "+str(len(stems)))
 
@@ -76,9 +82,9 @@ for token in stems:
 
 print("cleaned_tokens "+str(len(cleaned_tokens)))
 word_freq = Counter(cleaned_tokens)
-min_freq = 50  # 最小词频
+min_freq = 30  # 最小词频
 max_freq = 50000  # 最大词频
-#important_words = {word for word, freq in word_freq.items() if freq > threshold}
+
 important_words = [word for word in cleaned_tokens if min_freq < word_freq[word] <max_freq]
 print("important word "+str(len(important_words)))
 print("print(important_words[:10]) "+str(important_words[:10]))
@@ -124,14 +130,16 @@ print(f"Non-zero elements in the matrix: {non_zero_count}")
 mat = co_matrix_df
 mat_array = mat.values
 
+#nmf = NMF(n_components=300, init='random',max_iter=500, tol=1e-4, random_state=0)
+#nmf_result = nmf.fit_transform(mat_array)
 tsne = TSNE(n_components=2, random_state=42)
 mat_array_tsne = tsne.fit_transform(mat_array)
 # Using sklearn
-km = KMeans(n_clusters=5)
-km.fit(mat)
+#km = KMeans(n_clusters=5)
+#km.fit(mat)
 # Get cluster assignment labels
-labels = km.labels_
-print(len(labels))
+#labels = km.labels_
+#print(len(labels))
 
 
 
@@ -182,7 +190,7 @@ plt.title('Elbow Method for Optimal K')
 plt.xlabel('Number of clusters (K)')
 plt.ylabel('Inertia')
 plt.axvline(x=k_values[elbow_point], color='red', linestyle='--', label=f'Elbow at k={k_values[elbow_point]}')
-plt.savefig('elbow_method_plot3.png')
+plt.savefig('elbow_method_plot4.png')
 plt.show()
 print(f"the best k from Elbow Method is: {k_values[elbow_point]}")
 
@@ -193,7 +201,7 @@ silhouette_scores = []
 
 for k in k_values:
     km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array_tsne)  # 用 co-occurrence matrix 进行聚类
+    km.fit(mat_array)  # 用 co-occurrence matrix 进行聚类
     labels = km.labels_
 
     plt.figure(figsize=(8, 6))
@@ -204,7 +212,8 @@ for k in k_values:
 
     # 绘制簇的中心
     centers = km.cluster_centers_
-    plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='*', label='Centroids')
+    centers_tsne = tsne.fit_transform(centers)
+    plt.scatter(centers_tsne[:, 0], centers_tsne[:, 1], c='black', s=200, marker='*', label='Centroids')
 
     # 添加标题和标签
     plt.title(f'K-means Clustering (k={k})', fontsize=14)
@@ -214,7 +223,7 @@ for k in k_values:
 
     # 显示图形
 
-    plt.savefig(f'k_means_clustering_k_{k}.png')  # 保存为PNG格式，文件名包括k的值
+    plt.savefig(f'k_means_clustering_{k}.png')  # 保存为PNG格式，文件名包括k的值
     plt.show()
     plt.close()  # 关闭当前图形，避免显示多张图
 
