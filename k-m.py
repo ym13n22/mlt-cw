@@ -12,6 +12,8 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from nltk.stem import PorterStemmer
 from sklearn.decomposition import NMF
+from nltk.corpus import wordnet
+from nltk.stem import WordNetLemmatizer
 from nltk import pos_tag
 
 import seaborn as sns
@@ -19,6 +21,7 @@ from sklearn.decomposition import TruncatedSVD
 nltk.download('punkt')
 nltk.download('punkt_tab') 
 nltk.download('stopwords')
+nltk.download('averaged_perceptron_tagger_eng')
 
 
 num_words = {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'million', 'billion'}
@@ -48,7 +51,7 @@ words=[w.lower() for w in tokens]
 vocab=set(set(words))
 print("vocab "+str(len(vocab)))
 
-cleaned_words=[w for w in words if 20>len(w)>=3]
+cleaned_words=[w for w in words if 12>len(w)>=3]
 print("cleaned words "+str(len(cleaned_words)))
 cleaned_words1 = [w for w in cleaned_words if not re.search(r'[aeiou]{3,}', w)]
 print("cleaned words1 "+str(len(cleaned_words1)))
@@ -59,17 +62,47 @@ filtered_words = [w for w in cleaned_words1 if w not in stop_words]
 
 print("filtered word "+str(len(filtered_words)))
 
-stemmer = PorterStemmer()
+nltk.download('wordnet')
+
+lemmatizer = WordNetLemmatizer()
+
+# 逐一处理 `filtered_words` 的词性和词形还原
+tagged_words = pos_tag(filtered_words)
+
+lemmatized_words = []
+
+for word, tag in tagged_words:
+    if tag.startswith('J'):
+        wordnet_pos = wordnet.ADJ
+    elif tag.startswith('V'):
+        wordnet_pos = wordnet.VERB
+    elif tag.startswith('N'):
+        wordnet_pos = wordnet.NOUN
+    elif tag.startswith('R'):
+        wordnet_pos = wordnet.ADV
+    else:
+        wordnet_pos = None
+
+    if wordnet_pos:
+        lemmatized_word = lemmatizer.lemmatize(word, wordnet_pos)
+    else:
+        lemmatized_word = lemmatizer.lemmatize(word)
+
+    lemmatized_words.append(lemmatized_word)
+
+print(f"Lemmatized words count: {len(lemmatized_words)}")
+
+#stemmer = PorterStemmer()
 #tagged_words = pos_tag(filtered_words)
 #nouns = [word for word, tag in tagged_words if tag.startswith('NN')]
 #print("nouns "+str(len(nouns)))
-stems = [stemmer.stem(noun) for noun in filtered_words]
+#stems = [stemmer.stem(noun) for noun in filtered_words]
 
-print("stems "+str(len(stems)))
+print("stems "+str(len(lemmatized_words)))
 
 cleaned_tokens = []
 
-for token in stems:
+for token in lemmatized_words:
     # 去掉纯数字
     if token.isdigit():
         continue
@@ -87,9 +120,9 @@ for token in stems:
 print("cleaned_tokens "+str(len(cleaned_tokens)))
 word_freq = Counter(cleaned_tokens)
 min_freq = 30  # 最小词频
-max_freq = 50000  # 最大词频
+max_freq = 20000  # 最大词频
 
-important_words = [word for word in cleaned_tokens if min_freq < word_freq[word] <max_freq]
+important_words = [word for word in cleaned_tokens if min_freq < word_freq[word]]
 print("important word "+str(len(important_words)))
 print("print(important_words[:10]) "+str(important_words[:10]))
 
@@ -98,13 +131,14 @@ print("print(important_words[:10]) "+str(important_words[:10]))
 
 
 important_words_list = list(important_words)
-window_size = 50 #How many words in sequence to consider to be in the window
-# Create a list of co-occurring word pairs
 co_occurrences = defaultdict(Counter)
+window_size = max(5, min(20, len(important_words) // 2))
 for i, word in enumerate(important_words):
     for j in range(max(0, i - window_size), min(len(important_words), i + window_size + 1)):
         if i != j and word != important_words[j]:
-            co_occurrences[word][important_words[j]] += 1
+            distance = abs(i - j)
+            weight = 1 / (distance + 1)  # 使用距离的反比作为权重
+            co_occurrences[word][important_words[j]] += weight
 
 # Create a list of unique words
 unique_words = list(set(important_words))
@@ -134,12 +168,16 @@ print(f"Non-zero elements in the matrix: {non_zero_count}")
 mat = co_matrix_df
 mat_array = mat.values
 
-nmf = NMF(n_components=50, max_iter=200, random_state=42)
-nmf_result = nmf.fit_transform(mat_array)
-print("nmf_result.shape",str(nmf_result.shape))
+#nmf = NMF(n_components=50, max_iter=200, random_state=42)
+#nmf_result = nmf.fit_transform(mat_array)
+#print("nmf_result.shape",str(mat_array.shape))
+#tsne = TSNE(n_components=2, random_state=42)
+#mat_array_tsne = tsne.fit_transform(mat_array)
+svd = TruncatedSVD(n_components=50, random_state=42)
+mat_array_svd = svd.fit_transform(mat_array)
+print("mat_array_svd.shape",str(mat_array_svd.shape))
 tsne = TSNE(n_components=2, random_state=42)
-mat_array_tsne = tsne.fit_transform(nmf_result)
-print("mat_array_tsne.shape",str(mat_array_tsne.shape))
+mat_array_tsne = tsne.fit_transform(mat_array_svd)
 # Using sklearn
 #km = KMeans(n_clusters=5)
 #km.fit(mat)
@@ -155,7 +193,7 @@ print("mat_array_tsne.shape",str(mat_array_tsne.shape))
 plt.figure(figsize=(12, 10))
 
 
-plt.scatter(mat_array_tsne[:, 0], mat_array_tsne[:, 1], c='blue', s=10)
+plt.scatter(mat_array_tsne[:, 0], mat_array_tsne[:, 1], c='blue', s=10,alpha=0.6)
 
 
 
@@ -173,7 +211,7 @@ plt.show()
 
 
 # Format results as a DataFrame
-k_values = range(25, 30)  # 从 2 到 10 尝试不同的簇数
+k_values = range(2, 30)  # 从 2 到 10 尝试不同的簇数
 #k_values = [ 50, 100, 200, 500]
 
 
@@ -183,7 +221,7 @@ inertias = []
 # 计算每个 K 值的惯性
 for k in k_values:
     km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array_tsne)  # 使用共现矩阵
+    km.fit(mat_array_svd)  # 使用共现矩阵
     inertias.append(km.inertia_)
 
 inertia_diff = np.diff(inertias)  # 求出相邻两个 Inertia 之间的差异
@@ -207,7 +245,7 @@ silhouette_scores = []
 
 for k in k_values:
     km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array_tsne)  # 用 co-occurrence matrix 进行聚类
+    km.fit(mat_array_svd)  # 用 co-occurrence matrix 进行聚类
     labels = km.labels_
 
     plt.figure(figsize=(8, 6))
@@ -233,7 +271,7 @@ for k in k_values:
     plt.show()
     plt.close()  # 关闭当前图形，避免显示多张图
 
-    silhouette_avg = silhouette_score(mat_array_tsne, labels)
+    silhouette_avg = silhouette_score(mat_array_svd, labels)
     silhouette_scores.append(silhouette_avg)
     print(f"For k={k}, silhouette score: {silhouette_avg}")
 
