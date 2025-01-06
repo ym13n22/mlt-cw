@@ -15,6 +15,8 @@ from sklearn.decomposition import NMF
 from nltk.corpus import wordnet
 from nltk.stem import WordNetLemmatizer
 from nltk import pos_tag
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
@@ -24,8 +26,11 @@ nltk.download('stopwords')
 nltk.download('averaged_perceptron_tagger_eng')
 
 
-num_words = {'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'million', 'billion'}
-
+num_words = {
+    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',  # Cardinal numbers
+    'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',  # Ordinal numbers
+    'meter', 'kilometer', 'liter', 'gram', 'kilogram', 'second', 'minute', 'hour', 'day', 'year'  # Units of measurement
+}
 # 常见单位
 units = {'million', 'billion', 'kg', 'g', 'lb', 'm', 'cm', 'km', 'hour', 'minute', 'second', 'percent'}
 
@@ -120,11 +125,53 @@ for token in lemmatized_words:
 print("cleaned_tokens "+str(len(cleaned_tokens)))
 word_freq = Counter(cleaned_tokens)
 min_freq = 30  # 最小词频
-max_freq = 20000  # 最大词频
+max_freq = 10000  # 最大词频
 
 important_words = [word for word in cleaned_tokens if min_freq < word_freq[word]]
 print("important word "+str(len(important_words)))
+print("important word set "+str(len(set(important_words))))
 print("print(important_words[:10]) "+str(important_words[:10]))
+
+important_words_text = " ".join(important_words)
+
+# 创建一个 TF-IDF 向量化器
+tfidf_vectorizer = TfidfVectorizer()
+
+# 将 important_words_text 转换为一个文档列表（只有一个文档）
+tfidf_matrix = tfidf_vectorizer.fit_transform([important_words_text])
+
+# 获取词汇表中的所有特征名称（单词）
+feature_names = tfidf_vectorizer.get_feature_names_out()
+
+# 将 TF-IDF 矩阵转换为稠密格式，方便查看每个词的值
+dense_tfidf = tfidf_matrix.todense()
+
+# 获取第一个（也是唯一一个）文档的 TF-IDF 值
+tfidf_values = dense_tfidf.tolist()[0]
+
+# 创建一个词汇与其对应 TF-IDF 值的字典
+word_tfidf = dict(zip(feature_names, tfidf_values))
+
+# 输出每个重要单词的 TF-IDF 值
+#print("Important words and their TF-IDF values:")
+#for word, tfidf_val in word_tfidf.items():
+ #   print(f"{word}: {tfidf_val}")
+
+# 设置一个阈值
+threshold = 0.0015  # 可以根据需要调整这个值，较高的值会留下重要的单词
+
+# 筛选出 TF-IDF 值高于阈值的单词
+important_tfidf_words = [word for word, tfidf_val in word_tfidf.items() if tfidf_val > threshold]
+
+# 输出筛选后的重要单词
+print(f"重要单词数: {len(important_tfidf_words)}")
+print(f"重要单词: {important_tfidf_words[:10]}")  # 查看前10个重要单词
+
+# 输出筛选出的重要单词
+
+important_words = [word for word in important_words if word in important_tfidf_words]
+print("Important words after TF-IDF filtering:", str(len(important_words)))
+
 
 
 
@@ -132,7 +179,7 @@ print("print(important_words[:10]) "+str(important_words[:10]))
 
 important_words_list = list(important_words)
 co_occurrences = defaultdict(Counter)
-window_size = max(5, min(20, len(important_words) // 2))
+window_size = max(5, min(25, len(important_words) // 2))
 for i, word in enumerate(important_words):
     for j in range(max(0, i - window_size), min(len(important_words), i + window_size + 1)):
         if i != j and word != important_words[j]:
@@ -173,7 +220,7 @@ mat_array = mat.values
 #print("nmf_result.shape",str(mat_array.shape))
 #tsne = TSNE(n_components=2, random_state=42)
 #mat_array_tsne = tsne.fit_transform(mat_array)
-svd = TruncatedSVD(n_components=50, random_state=42)
+svd = TruncatedSVD(n_components=100, random_state=42)
 mat_array_svd = svd.fit_transform(mat_array)
 print("mat_array_svd.shape",str(mat_array_svd.shape))
 tsne = TSNE(n_components=2, random_state=42)
@@ -211,22 +258,29 @@ plt.show()
 
 
 # Format results as a DataFrame
-k_values = range(2, 30)  # 从 2 到 10 尝试不同的簇数
+k_values = range(2, 25)  # 从 2 到 10 尝试不同的簇数
 #k_values = [ 50, 100, 200, 500]
 
 
 inertias = []
+silhouette_scores = []
 
 
 # 计算每个 K 值的惯性
 for k in k_values:
     km = KMeans(n_clusters=k, random_state=42)
     km.fit(mat_array_svd)  # 使用共现矩阵
+    labels = km.labels_
     inertias.append(km.inertia_)
+    silhouette_score_ = silhouette_score(mat_array_svd, labels)
+    silhouette_scores.append(silhouette_score_)
+
 
 inertia_diff = np.diff(inertias)  # 求出相邻两个 Inertia 之间的差异
 inertia_diff2 = np.diff(inertia_diff)  # 求出差异的差异（加速/减速）
 elbow_point = np.argmax(inertia_diff2) + 1
+
+
 
 # 绘制肘部法则图
 plt.plot(k_values, inertias, marker='o')
@@ -238,6 +292,22 @@ plt.savefig('elbow_method_plot4.png')
 plt.show()
 print(f"the best k from Elbow Method is: {k_values[elbow_point]}")
 
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.plot(k_values, inertias, marker='o')
+plt.title("Elbow Method")
+plt.xlabel("Number of clusters")
+plt.ylabel("Inertia")
+
+plt.subplot(1, 2, 2)
+plt.plot(k_values, silhouette_scores, marker='o')
+plt.title("Silhouette Score")
+plt.xlabel("Number of clusters")
+plt.ylabel("Silhouette Score")
+
+plt.tight_layout()
+plt.show()
+
 
 #print("print(mat_array.shape) "+str(mat_array.shape))
 silhouette_scores = []
@@ -248,28 +318,29 @@ for k in k_values:
     km.fit(mat_array_svd)  # 用 co-occurrence matrix 进行聚类
     labels = km.labels_
 
-    plt.figure(figsize=(8, 6))
+    #plt.figure(figsize=(8, 6))
 
     # 为每个簇绘制不同颜色的点
-    for i in range(k):
-        plt.scatter(mat_array_tsne[labels == i, 0], mat_array_tsne[labels == i, 1], label=f'Cluster {i + 1}', s=50)
+    #for i in range(k):
+        #plt.scatter(mat_array_tsne[labels == i, 0], mat_array_tsne[labels == i, 1], label=f'Cluster {i + 1}', s=50)
 
     # 绘制簇的中心
-    centers = km.cluster_centers_
-    print("print(centers.shape)"+str(centers.shape))
-    plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='*', label='Centroids')
+    #centers = km.cluster_centers_
+    #print("print(centers.shape)"+str(centers.shape))
+    #plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='*', label='Centroids')
 
     # 添加标题和标签
-    plt.title(f'K-means Clustering (k={k})', fontsize=14)
-    plt.xlabel('Feature 1', fontsize=12)
-    plt.ylabel('Feature 2', fontsize=12)
-    plt.legend()
+    #plt.title(f'K-means Clustering (k={k})', fontsize=14)
+    #plt.xlabel('Feature 1', fontsize=12)
+    #plt.ylabel('Feature 2', fontsize=12)
+    #plt.legend()
 
     # 显示图形
 
-    plt.savefig(f'k_means_clustering_{k}.png')  # 保存为PNG格式，文件名包括k的值
-    plt.show()
-    plt.close()  # 关闭当前图形，避免显示多张图
+    #plt.savefig(f'k_means_clustering_{k}.png')  # 保存为PNG格式，文件名包括k的值
+    #plt.show()
+    #plt.close()  # 关闭当前图形，避免显示多张图
+
 
     silhouette_avg = silhouette_score(mat_array_svd, labels)
     silhouette_scores.append(silhouette_avg)
