@@ -124,6 +124,30 @@ for token in lemmatized_words:
 
 print("cleaned_tokens "+str(len(cleaned_tokens)))
 word_freq = Counter(cleaned_tokens)
+# 将词频按从小到大排序
+sorted_word_freq = sorted(word_freq.items(), key=lambda x: x[1])
+
+# 计算中间段的起始和结束位置
+n = len(sorted_word_freq)
+start = n*4 // 10  # 从四分之一位置开始
+end = n * 9 // 10  # 到四分之三位置
+
+# 取中间段
+middle_segment = sorted_word_freq[start:end]
+
+# 打印中间段的第一个和最后一个词及其词频
+if middle_segment:  # 确保中间段不为空
+    first_word, first_freq = middle_segment[0]
+    last_word, last_freq = middle_segment[-1]
+    print(f"First: {first_word}: {first_freq}")
+    print(f"Last: {last_word}: {last_freq}")
+else:
+    print("Middle segment is empty.")
+
+middle_words = set(word for word, _ in middle_segment)
+print("middle_words "+str(len(middle_words)))
+filtered_tokens = [word for word in cleaned_tokens if word in middle_words]
+print("filtered_tokens "+str(len(filtered_tokens)))
 min_freq = 30  # 最小词频
 max_freq = 10000  # 最大词频
 
@@ -177,18 +201,18 @@ print("Important words after TF-IDF filtering:", str(len(important_words)))
 
 
 
-important_words_list = list(important_words)
+important_words_list = list(filtered_tokens)
 co_occurrences = defaultdict(Counter)
-window_size = max(5, min(25, len(important_words) // 2))
-for i, word in enumerate(important_words):
-    for j in range(max(0, i - window_size), min(len(important_words), i + window_size + 1)):
-        if i != j and word != important_words[j]:
+window_size = max(5, min(25, len(filtered_tokens) // 2))
+for i, word in enumerate(filtered_tokens):
+    for j in range(max(0, i - window_size), min(len(filtered_tokens), i + window_size + 1)):
+        if i != j and word != filtered_tokens[j]:
             distance = abs(i - j)
             weight = 1 / (distance + 1)  # 使用距离的反比作为权重
-            co_occurrences[word][important_words[j]] += weight
+            co_occurrences[word][filtered_tokens[j]] += weight
 
 # Create a list of unique words
-unique_words = list(set(important_words))
+unique_words = list(set(filtered_tokens))
 # Initialize the co-occurrence matrix
 co_matrix = np.zeros((len(unique_words), len(unique_words)), dtype=int)
 
