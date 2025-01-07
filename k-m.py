@@ -16,7 +16,7 @@ from nltk.corpus import wordnet
 from nltk.stem import WordNetLemmatizer
 from nltk import pos_tag
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+from sklearn.model_selection import KFold
 
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
@@ -27,9 +27,10 @@ nltk.download('averaged_perceptron_tagger_eng')
 
 
 num_words = {
-    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',  # Cardinal numbers
+    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'zero', # Cardinal numbers
     'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',  # Ordinal numbers
-    'meter', 'kilometer', 'liter', 'gram', 'kilogram', 'second', 'minute', 'hour', 'day', 'year'  # Units of measurement
+    'meter', 'kilometer', 'liter', 'gram', 'kilogram', 'second', 'minute', 'hour', 'day', 'year',  # Units of measurement
+    'and','or','but','because','also','so', 'for', 'yet', 'although', 'because', 'since', 'unless', 'until', 'while', 'if', 'though', 'once', 'when','fine','also'
 }
 # 常见单位
 units = {'million', 'billion', 'kg', 'g', 'lb', 'm', 'cm', 'km', 'hour', 'minute', 'second', 'percent'}
@@ -123,14 +124,22 @@ for token in lemmatized_words:
 
 
 print("cleaned_tokens "+str(len(cleaned_tokens)))
-word_freq = Counter(cleaned_tokens)
+
+final_nouns = []
+
+for token, tag in nltk.pos_tag(cleaned_tokens):  # 使用 POS 标注器对清理后的 token 进行标注
+    if tag.startswith('N'):  # 检查是否为名词
+        final_nouns.append(token)
+
+print("Final nouns: ", str(final_nouns))
+word_freq = Counter(final_nouns)
 # 将词频按从小到大排序
 sorted_word_freq = sorted(word_freq.items(), key=lambda x: x[1])
 
 # 计算中间段的起始和结束位置
 n = len(sorted_word_freq)
-start = n*4 // 10  # 从四分之一位置开始
-end = n * 9 // 10  # 到四分之三位置
+start = n*954 // 1000  # 从四分之一位置开始
+end = n * 1000 // 1000  # 到四分之三位置
 
 # 取中间段
 middle_segment = sorted_word_freq[start:end]
@@ -150,7 +159,7 @@ filtered_tokens = [word for word in cleaned_tokens if word in middle_words]
 print("filtered_tokens "+str(len(filtered_tokens)))
 min_freq = 30  # 最小词频
 max_freq = 10000  # 最大词频
-
+'''
 important_words = [word for word in cleaned_tokens if min_freq < word_freq[word]]
 print("important word "+str(len(important_words)))
 print("important word set "+str(len(set(important_words))))
@@ -195,6 +204,9 @@ print(f"重要单词: {important_tfidf_words[:10]}")  # 查看前10个重要单�
 
 important_words = [word for word in important_words if word in important_tfidf_words]
 print("Important words after TF-IDF filtering:", str(len(important_words)))
+
+'''
+
 
 
 
@@ -279,98 +291,78 @@ plt.savefig(f'co-occurrence.png')
 # 显示图形
 plt.show()
 
+# 定义候选的 k 值范围
+k_values = range(2, 25)  # 尝试不同的 k 值
+kf = KFold(n_splits=10, shuffle=True, random_state=42)  # 5折交叉验证
+inertias = []  # 存储惯性
+silhouette_scores_cv = []  # 存储轮廓系数
+tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)  # t-SNE 参数
 
+# 预先将高维数据降维到2D
+X_2d = tsne.fit_transform(mat_array_svd)
 
-# Format results as a DataFrame
-k_values = range(2, 25)  # 从 2 到 10 尝试不同的簇数
-#k_values = [ 50, 100, 200, 500]
-
-
-inertias = []
-silhouette_scores = []
-
-
-# 计算每个 K 值的惯性
+# 遍历 k 值进行聚类分析
 for k in k_values:
-    km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array_svd)  # 使用共现矩阵
-    labels = km.labels_
-    inertias.append(km.inertia_)
-    silhouette_score_ = silhouette_score(mat_array_svd, labels)
-    silhouette_scores.append(silhouette_score_)
+    print("start with K: "+str(k))
+    km_inertias = []  # 储存当前 k 的所有折叠的惯性
+    km_silhouette_scores = []  # 储存当前 k 的所有折叠的轮廓系数
 
+    for train_idx, test_idx in kf.split(mat_array_svd):
+        # 按索引划分训练集和验证集
+        X_train, X_test = mat_array_svd[train_idx], mat_array_svd[test_idx]
 
-inertia_diff = np.diff(inertias)  # 求出相邻两个 Inertia 之间的差异
-inertia_diff2 = np.diff(inertia_diff)  # 求出差异的差异（加速/减速）
-elbow_point = np.argmax(inertia_diff2) + 1
+        # KMeans 聚类
+        km = KMeans(n_clusters=k, random_state=42)
+        km.fit(X_train)
+        labels = km.predict(X_test)  # 对验证集进行预测
 
+        if len(np.unique(labels)) <= 1:
+            print(f"Skipping silhouette score calculation for k={k}, single cluster detected.")
+            continue  # 跳过单簇情况
 
+        # 计算验证集的惯性和轮廓系数
+        inertia = km.inertia_
+        silhouette_avg = silhouette_score(X_test, labels)
+        print(f"current silhouette score with {k} is : ", silhouette_avg)
 
-# 绘制肘部法则图
-plt.plot(k_values, inertias, marker='o')
-plt.title('Elbow Method for Optimal K')
-plt.xlabel('Number of clusters (K)')
-plt.ylabel('Inertia')
-plt.axvline(x=k_values[elbow_point], color='red', linestyle='--', label=f'Elbow at k={k_values[elbow_point]}')
-plt.savefig('elbow_method_plot4.png')
-plt.show()
-print(f"the best k from Elbow Method is: {k_values[elbow_point]}")
+        km_inertias.append(inertia)
+        km_silhouette_scores.append(silhouette_avg)
 
+    # 计算当前 k 值的平均惯性和平均轮廓系数
+    inertias.append(np.mean(km_inertias))
+    silhouette_scores_cv.append(np.mean(km_silhouette_scores))
+    print(f"average silhouette score with {k} is : ", silhouette_scores_cv)
+
+    # 在二维空间中可视化聚类
+    labels_full_data = KMeans(n_clusters=k, random_state=42).fit_predict(mat_array_svd)
+    plt.figure(figsize=(10, 8))
+    plt.scatter(X_2d[:, 0], X_2d[:, 1], c=labels_full_data, cmap='viridis', s=10, alpha=0.8)
+    plt.colorbar()
+    plt.title(f"t-SNE Visualization of Clustering (k={k})")
+    plt.xlabel("t-SNE Component 1")
+    plt.ylabel("t-SNE Component 2")
+    plt.savefig(f"tsne_clustering_k_{k}.png")  # 保存图像
+    plt.show()
+
+# 找到轮廓系数最大时的 k 值
+k_optimal_silhouette = k_values[np.argmax(silhouette_scores_cv)]
+
+# 绘制肘部法则图和轮廓系数曲线
 plt.figure(figsize=(12, 6))
 plt.subplot(1, 2, 1)
 plt.plot(k_values, inertias, marker='o')
-plt.title("Elbow Method")
-plt.xlabel("Number of clusters")
-plt.ylabel("Inertia")
+plt.title("Elbow Method with Cross-Validation")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Average Inertia")
 
 plt.subplot(1, 2, 2)
-plt.plot(k_values, silhouette_scores, marker='o')
-plt.title("Silhouette Score")
-plt.xlabel("Number of clusters")
-plt.ylabel("Silhouette Score")
+plt.plot(k_values, silhouette_scores_cv, marker='o')
+plt.title("Silhouette Score with Cross-Validation")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Average Silhouette Score")
 
 plt.tight_layout()
 plt.show()
 
-
-#print("print(mat_array.shape) "+str(mat_array.shape))
-silhouette_scores = []
-
-
-for k in k_values:
-    km = KMeans(n_clusters=k, random_state=42)
-    km.fit(mat_array_svd)  # 用 co-occurrence matrix 进行聚类
-    labels = km.labels_
-
-    #plt.figure(figsize=(8, 6))
-
-    # 为每个簇绘制不同颜色的点
-    #for i in range(k):
-        #plt.scatter(mat_array_tsne[labels == i, 0], mat_array_tsne[labels == i, 1], label=f'Cluster {i + 1}', s=50)
-
-    # 绘制簇的中心
-    #centers = km.cluster_centers_
-    #print("print(centers.shape)"+str(centers.shape))
-    #plt.scatter(centers[:, 0], centers[:, 1], c='black', s=200, marker='*', label='Centroids')
-
-    # 添加标题和标签
-    #plt.title(f'K-means Clustering (k={k})', fontsize=14)
-    #plt.xlabel('Feature 1', fontsize=12)
-    #plt.ylabel('Feature 2', fontsize=12)
-    #plt.legend()
-
-    # 显示图形
-
-    #plt.savefig(f'k_means_clustering_{k}.png')  # 保存为PNG格式，文件名包括k的值
-    #plt.show()
-    #plt.close()  # 关闭当前图形，避免显示多张图
-
-
-    silhouette_avg = silhouette_score(mat_array_svd, labels)
-    silhouette_scores.append(silhouette_avg)
-    print(f"For k={k}, silhouette score: {silhouette_avg}")
-
-# 找到轮廓系数最大时的 k 值
-k_optimal_silhouette = k_values[silhouette_scores.index(max(silhouette_scores))]
-print(f"the best k for silhouette: {k_optimal_silhouette} ,with {max(silhouette_scores)}")
-
+# 输出最优结果
+print(f"The best k for silhouette score is: {k_optimal_silhouette}, with silhouette score: {max(silhouette_scores_cv)}")
