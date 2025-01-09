@@ -355,6 +355,7 @@ for k in k_values:
 
 # 找到轮廓系数最大时的 k 值
 k_optimal_silhouette = k_values[np.argmax(silhouette_scores_cv)]
+terms = standardized_array.get_feature_names_out()
 
 # 绘制肘部法则图和轮廓系数曲线
 plt.figure(figsize=(12, 6))
@@ -375,3 +376,18 @@ plt.show()
 
 # 输出最优结果
 print(f"The best k for silhouette score is: {k_optimal_silhouette}, with silhouette score: {max(silhouette_scores_cv)}")
+kmeans_final = KMeans(n_clusters=k_optimal_silhouette, random_state=42)
+labels_final = kmeans_final.fit_predict(standardized_array)
+
+# 构建簇中包含词条的信息
+cluster_words = {i: [] for i in range(k_optimal_silhouette)}
+
+# 假设 `terms` 是词汇表的列表或数组
+for i, label in enumerate(labels_final):
+    cluster_words[label].append(terms[i])
+
+# 输出每个簇中词的数量和前 10 个词
+for cluster_id, words in cluster_words.items():
+    print(f"Cluster {cluster_id}:")
+    print(f"  Number of words: {len(words)}")
+    print(f"  Top 10 words: {words[:10]}")
