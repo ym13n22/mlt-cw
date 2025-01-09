@@ -17,6 +17,7 @@ from nltk.stem import WordNetLemmatizer
 from nltk import pos_tag
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
 
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
@@ -128,18 +129,19 @@ print("cleaned_tokens "+str(len(cleaned_tokens)))
 final_nouns = []
 
 for token, tag in nltk.pos_tag(cleaned_tokens):  # 使用 POS 标注器对清理后的 token 进行标注
-    if tag.startswith('N'):  # 检查是否为名词
+    #if tag.startswith('N'):
+    if tag.startswith('N') or tag.startswith('V') or tag.startswith('J'):
         final_nouns.append(token)
 
-print("Final nouns: ", str(final_nouns))
+print("Final nouns: ", str(len(final_nouns)))
 word_freq = Counter(final_nouns)
 # 将词频按从小到大排序
 sorted_word_freq = sorted(word_freq.items(), key=lambda x: x[1])
 
 # 计算中间段的起始和结束位置
 n = len(sorted_word_freq)
-start = n*954 // 1000  # 从四分之一位置开始
-end = n * 1000 // 1000  # 到四分之三位置
+start = n*900 // 1000  # 从四分之一位置开始
+end = n * 999999 // 1000000  # 到四分之三位置
 
 # 取中间段
 middle_segment = sorted_word_freq[start:end]
@@ -213,12 +215,14 @@ print("Important words after TF-IDF filtering:", str(len(important_words)))
 
 
 
-important_words_list = list(filtered_tokens)
+#Let's build cooccurrence counts
+#window_size = 25 #How many words in sequence to consider to be in the window
+# Create a list of co-occurring word pairs
 co_occurrences = defaultdict(Counter)
 window_size = max(5, min(25, len(filtered_tokens) // 2))
 for i, word in enumerate(filtered_tokens):
     for j in range(max(0, i - window_size), min(len(filtered_tokens), i + window_size + 1)):
-        if i != j and word != filtered_tokens[j]:
+        if i != j:
             distance = abs(i - j)
             weight = 1 / (distance + 1)  # 使用距离的反比作为权重
             co_occurrences[word][filtered_tokens[j]] += weight
@@ -251,13 +255,18 @@ print(f"Non-zero elements in the matrix: {non_zero_count}")
 mat = co_matrix_df
 mat_array = mat.values
 
+scaler = StandardScaler()
+standardized_array = scaler.fit_transform(mat_array)
+
+
+
 #nmf = NMF(n_components=50, max_iter=200, random_state=42)
 #nmf_result = nmf.fit_transform(mat_array)
 #print("nmf_result.shape",str(mat_array.shape))
 #tsne = TSNE(n_components=2, random_state=42)
 #mat_array_tsne = tsne.fit_transform(mat_array)
 svd = TruncatedSVD(n_components=100, random_state=42)
-mat_array_svd = svd.fit_transform(mat_array)
+mat_array_svd = svd.fit_transform(standardized_array)
 print("mat_array_svd.shape",str(mat_array_svd.shape))
 tsne = TSNE(n_components=2, random_state=42)
 mat_array_tsne = tsne.fit_transform(mat_array_svd)
@@ -292,14 +301,14 @@ plt.savefig(f'co-occurrence.png')
 plt.show()
 
 # 定义候选的 k 值范围
-k_values = range(2, 25)  # 尝试不同的 k 值
+k_values = range(2, 6)  # 尝试不同的 k 值
 kf = KFold(n_splits=10, shuffle=True, random_state=42)  # 5折交叉验证
 inertias = []  # 存储惯性
 silhouette_scores_cv = []  # 存储轮廓系数
 tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)  # t-SNE 参数
 
 # 预先将高维数据降维到2D
-X_2d = tsne.fit_transform(mat_array_svd)
+X_2d = tsne.fit_transform(mat_array)
 
 # 遍历 k 值进行聚类分析
 for k in k_values:
@@ -307,9 +316,9 @@ for k in k_values:
     km_inertias = []  # 储存当前 k 的所有折叠的惯性
     km_silhouette_scores = []  # 储存当前 k 的所有折叠的轮廓系数
 
-    for train_idx, test_idx in kf.split(mat_array_svd):
+    for train_idx, test_idx in kf.split(standardized_array):
         # 按索引划分训练集和验证集
-        X_train, X_test = mat_array_svd[train_idx], mat_array_svd[test_idx]
+        X_train, X_test = standardized_array[train_idx], standardized_array[test_idx]
 
         # KMeans 聚类
         km = KMeans(n_clusters=k, random_state=42)
@@ -334,7 +343,7 @@ for k in k_values:
     print(f"average silhouette score with {k} is : ", silhouette_scores_cv)
 
     # 在二维空间中可视化聚类
-    labels_full_data = KMeans(n_clusters=k, random_state=42).fit_predict(mat_array_svd)
+    labels_full_data = KMeans(n_clusters=k, random_state=42).fit_predict(standardized_array)
     plt.figure(figsize=(10, 8))
     plt.scatter(X_2d[:, 0], X_2d[:, 1], c=labels_full_data, cmap='viridis', s=10, alpha=0.8)
     plt.colorbar()
