@@ -339,7 +339,7 @@ plt.savefig(f'co-occurrence.png')
 plt.show()
 
 # 定义候选的 k 值范围
-k_values = range(2, 11)  # 尝试不同的 k 值
+k_values = range(2, 26)  # 尝试不同的 k 值
 kf = KFold(n_splits=10, shuffle=True, random_state=42)  # 5折交叉验证
 inertias = []  # 存储惯性
 silhouette_scores_cv = []  # 存储轮廓系数
