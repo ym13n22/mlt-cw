@@ -18,6 +18,11 @@ from nltk import pos_tag
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+from scipy import stats
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import Normalizer
 
 import seaborn as sns
 from sklearn.decomposition import TruncatedSVD
@@ -58,7 +63,7 @@ words=[w.lower() for w in tokens]
 vocab=set(set(words))
 print("vocab "+str(len(vocab)))
 
-cleaned_words=[w for w in words if 12>len(w)>=3]
+cleaned_words=[w for w in words if 20>len(w)>=3]
 print("cleaned words "+str(len(cleaned_words)))
 cleaned_words1 = [w for w in cleaned_words if not re.search(r'[aeiou]{3,}', w)]
 print("cleaned words1 "+str(len(cleaned_words1)))
@@ -140,7 +145,7 @@ sorted_word_freq = sorted(word_freq.items(), key=lambda x: x[1])
 
 # 计算中间段的起始和结束位置
 n = len(sorted_word_freq)
-start = n*900 // 1000  # 从四分之一位置开始
+start = n*916 // 1000  # 从四分之一位置开始
 end = n * 999999 // 1000000  # 到四分之三位置
 
 # 取中间段
@@ -157,7 +162,7 @@ else:
 
 middle_words = set(word for word, _ in middle_segment)
 print("middle_words "+str(len(middle_words)))
-filtered_tokens = [word for word in cleaned_tokens if word in middle_words]
+filtered_tokens = [word for word in final_nouns if word in middle_words]
 print("filtered_tokens "+str(len(filtered_tokens)))
 min_freq = 30  # 最小词频
 max_freq = 10000  # 最大词频
@@ -255,8 +260,41 @@ print(f"Non-zero elements in the matrix: {non_zero_count}")
 mat = co_matrix_df
 mat_array = mat.values
 
-scaler = StandardScaler()
-standardized_array = scaler.fit_transform(mat_array)
+
+inverse_cos_sim = 1 - cosine_similarity(mat_array)
+
+print("inverse_cos_sim :", inverse_cos_sim)
+
+# 标准化操作
+mean_val = inverse_cos_sim.mean()
+std_val = inverse_cos_sim.std()
+
+# 标准化：每个元素减去均值并除以标准差
+standardized_inverse_cos_sim = (inverse_cos_sim - mean_val) / std_val
+
+# 归一化
+min_val = standardized_inverse_cos_sim.min()
+max_val = standardized_inverse_cos_sim.max()
+
+# 归一化：缩放到 [0, 1] 范围
+normalized_inverse_cos_sim = (standardized_inverse_cos_sim - min_val) / (max_val - min_val)
+
+#cosine_sim_normalized = (cosine_sim + 1)/2
+#print("cosine_sim normalized:", cosine_sim_normalized)
+#threshold = 0.2
+#upper_limit=0.8
+#cosine_sim_normalized[cosine_sim_normalized < threshold] = 0
+#cosine_sim_normalized[cosine_sim_normalized > upper_limit] = upper_limit
+
+#scaler = MinMaxScaler(feature_range=(0, 1))
+#cosine_sim_normalized = scaler.fit_transform(cosine_sim_normalized)
+
+
+
+#scaler = StandardScaler()
+#standardized_array = scaler.fit_transform(cosine_sim)
+
+
 
 
 
@@ -266,7 +304,7 @@ standardized_array = scaler.fit_transform(mat_array)
 #tsne = TSNE(n_components=2, random_state=42)
 #mat_array_tsne = tsne.fit_transform(mat_array)
 svd = TruncatedSVD(n_components=100, random_state=42)
-mat_array_svd = svd.fit_transform(standardized_array)
+mat_array_svd = svd.fit_transform(normalized_inverse_cos_sim)
 print("mat_array_svd.shape",str(mat_array_svd.shape))
 tsne = TSNE(n_components=2, random_state=42)
 mat_array_tsne = tsne.fit_transform(mat_array_svd)
@@ -301,14 +339,14 @@ plt.savefig(f'co-occurrence.png')
 plt.show()
 
 # 定义候选的 k 值范围
-k_values = range(2, 6)  # 尝试不同的 k 值
+k_values = range(2, 11)  # 尝试不同的 k 值
 kf = KFold(n_splits=10, shuffle=True, random_state=42)  # 5折交叉验证
 inertias = []  # 存储惯性
 silhouette_scores_cv = []  # 存储轮廓系数
 tsne = TSNE(n_components=2, random_state=42, perplexity=30, n_iter=1000)  # t-SNE 参数
 
 # 预先将高维数据降维到2D
-X_2d = tsne.fit_transform(mat_array)
+X_2d = tsne.fit_transform(normalized_inverse_cos_sim)
 
 # 遍历 k 值进行聚类分析
 for k in k_values:
@@ -316,12 +354,12 @@ for k in k_values:
     km_inertias = []  # 储存当前 k 的所有折叠的惯性
     km_silhouette_scores = []  # 储存当前 k 的所有折叠的轮廓系数
 
-    for train_idx, test_idx in kf.split(standardized_array):
+    for train_idx, test_idx in kf.split(normalized_inverse_cos_sim):
         # 按索引划分训练集和验证集
-        X_train, X_test = standardized_array[train_idx], standardized_array[test_idx]
+        X_train, X_test = normalized_inverse_cos_sim[train_idx],normalized_inverse_cos_sim[test_idx]
 
         # KMeans 聚类
-        km = KMeans(n_clusters=k, random_state=42)
+        km = KMeans(n_clusters=k,tol=1e-4,max_iter=1000, random_state=42)
         km.fit(X_train)
         labels = km.predict(X_test)  # 对验证集进行预测
 
@@ -343,7 +381,7 @@ for k in k_values:
     print(f"average silhouette score with {k} is : ", silhouette_scores_cv)
 
     # 在二维空间中可视化聚类
-    labels_full_data = KMeans(n_clusters=k, random_state=42).fit_predict(standardized_array)
+    labels_full_data = KMeans(n_clusters=k, random_state=42).fit_predict(normalized_inverse_cos_sim)
     plt.figure(figsize=(10, 8))
     plt.scatter(X_2d[:, 0], X_2d[:, 1], c=labels_full_data, cmap='viridis', s=10, alpha=0.8)
     plt.colorbar()
@@ -355,7 +393,7 @@ for k in k_values:
 
 # 找到轮廓系数最大时的 k 值
 k_optimal_silhouette = k_values[np.argmax(silhouette_scores_cv)]
-terms = standardized_array.get_feature_names_out()
+terms = unique_words
 
 # 绘制肘部法则图和轮廓系数曲线
 plt.figure(figsize=(12, 6))
@@ -377,7 +415,7 @@ plt.show()
 # 输出最优结果
 print(f"The best k for silhouette score is: {k_optimal_silhouette}, with silhouette score: {max(silhouette_scores_cv)}")
 kmeans_final = KMeans(n_clusters=k_optimal_silhouette, random_state=42)
-labels_final = kmeans_final.fit_predict(standardized_array)
+labels_final = kmeans_final.fit_predict(normalized_inverse_cos_sim)
 
 # 构建簇中包含词条的信息
 cluster_words = {i: [] for i in range(k_optimal_silhouette)}
